@@ -1,0 +1,61 @@
+{
+  "name": "@deapi/mastra-voice",
+  "version": "0.1.0",
+  "description": "deAPI voice provider for Mastra: text-to-speech (Kokoro, Chatterbox, Qwen3 TTS) and speech-to-text (Whisper Large V3)",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "prepublishOnly": "npm run build && npm test"
+  },
+  "keywords": [
+    "mastra",
+    "voice",
+    "tts",
+    "stt",
+    "text-to-speech",
+    "speech-to-text",
+    "deapi",
+    "kokoro",
+    "whisper",
+    "ai"
+  ],
+  "license": "MIT",
+  "homepage": "https://github.com/deapi-ai/mastra-voice-deapi#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/deapi-ai/mastra-voice-deapi.git"
+  },
+  "bugs": {
+    "url": "https://github.com/deapi-ai/mastra-voice-deapi/issues"
+  },
+  "author": "deAPI <media@deapi.ai>",
+  "peerDependencies": {
+    "@mastra/core": ">=1.0.0"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "devDependencies": {
+    "@mastra/core": "^1.84.0",
+    "@types/node": "^22.20.5",
+    "typescript": "^5.9.3",
+    "vitest": "^3.2.7",
+    "zod": "^4.6.7"
+  }
+}
