@@ -6,17 +6,26 @@ on:
     branches:
       - main
 
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build:
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
-        node-version: ['20', '22']
+        # engines.node is >=22.13.0 (same as @mastra/core)
+        node-version: ['22', '24']
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
 
       - name: Use Node.js ${{ matrix.node-version }}
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: ${{ matrix.node-version }}
           cache: npm
@@ -27,8 +36,40 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
+      - name: Test (with coverage)
+        run: npm run test:coverage
+
       - name: Build
         run: npm run build
 
-      - name: Run tests
+      - name: Package contents
+        run: npm pack --dry-run
+
+  mastra-core-min:
+    # The peer range is ^1.1.0: check the oldest supported @mastra/core release too.
+    name: '@mastra/core ${{ matrix.core }}'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { core: '1.1.0', typecheck: 'npm run typecheck' }
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - name: Use Node.js 22
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install dependencies with @mastra/core ${{ matrix.core }}
+        run: |
+          npm ci
+          npm install --no-save "@mastra/core@${{ matrix.core }}"
+
+      - name: Typecheck
+        run: ${{ matrix.typecheck }}
+
+      - name: Test
         run: npm test
