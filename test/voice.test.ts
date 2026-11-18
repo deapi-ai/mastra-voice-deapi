@@ -58,7 +58,7 @@ describe('DeapiVoice (mocked)', () => {
 
     expect(text).toBe('Hello world.');
     const form = fetchMock.mock.calls[0][1].body as FormData;
-    expect(form.get('model')).toBe('WhisperLargeV3');
+    expect(form.get('model')).toBe('WhisperLargeV3Ct2');
     expect(form.get('include_ts')).toBe('false');
     expect((form.get('source_file') as File).name).toBe('audio.wav');
   });

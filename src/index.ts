@@ -4,7 +4,7 @@ import { MastraVoice } from '@mastra/core/voice';
 
 const DEFAULT_BASE_URL = 'https://api.deapi.ai/api/v2';
 const DEFAULT_SPEECH_MODEL = 'Kokoro';
-const DEFAULT_LISTENING_MODEL = 'WhisperLargeV3';
+const DEFAULT_LISTENING_MODEL = 'WhisperLargeV3Ct2';
 const DEFAULT_SPEAKER = 'af_alloy';
 
 /** Text-to-speech models available on deAPI. Any other model slug from `GET /models` also works. */
@@ -16,7 +16,7 @@ export type DeapiSpeechModel =
   | (string & {});
 
 /** Speech-to-text models available on deAPI. */
-export type DeapiListeningModel = 'WhisperLargeV3' | (string & {});
+export type DeapiListeningModel = 'WhisperLargeV3Ct2' | (string & {});
 
 export interface DeapiModelConfig<TModel extends string = string> {
   name?: TModel;
@@ -87,9 +87,23 @@ interface DeapiModel {
 
 const FAILED_STATUSES = new Set(['error', 'failed', 'cancelled', 'canceled']);
 
+/** Transcription results are JSON (`{ "text": ... }`) or plain text, depending on the model. */
+function extractTranscript(raw: string): string {
+  const trimmed = raw.trim();
+  if (trimmed.startsWith('{')) {
+    try {
+      const parsed = JSON.parse(trimmed) as { text?: unknown };
+      if (typeof parsed.text === 'string') return parsed.text.trim();
+    } catch {
+      // Not JSON: return the raw text.
+    }
+  }
+  return trimmed;
+}
+
 /**
  * deAPI voice provider for Mastra: text-to-speech (Kokoro, Chatterbox, Qwen3 TTS)
- * and speech-to-text (Whisper Large V3) on open-source models.
+ * and speech-to-text (Whisper Large V3, CTranslate2) on open-source models.
  *
  * Get an API key at https://app.deapi.ai/register and set `DEAPI_API_KEY`.
  */
@@ -212,12 +226,12 @@ export class DeapiVoice extends MastraVoice {
 
     const job = await this.runJob(this.listeningApiKey, '/audio/transcriptions', { method: 'POST', body: form });
     if (typeof job.result === 'string' && job.result.length > 0) {
-      return job.result;
+      return extractTranscript(job.result);
     }
     if (!job.result_url) {
       throw new Error('deAPI transcription job finished without a transcript.');
     }
-    return (await this.download(job.result_url)).toString('utf-8').trim();
+    return extractTranscript((await this.download(job.result_url)).toString('utf-8'));
   }
 
   private async runJob(apiKey: string, path: string, init: RequestInit): Promise<DeapiJob> {

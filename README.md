@@ -3,7 +3,7 @@
 [deAPI](https://deapi.ai) voice provider for [Mastra](https://mastra.ai). It adds text-to-speech and speech-to-text on open-source models:
 
 - **Speak (TTS):** Kokoro (41 voices: US and UK English, Spanish, French, Italian, Brazilian Portuguese, Hindi), Chatterbox (23 languages), Qwen3 TTS (10 languages)
-- **Listen (STT):** Whisper Large V3
+- **Listen (STT):** Whisper Large V3 (CTranslate2)
 
 ## Installation
 
@@ -25,7 +25,7 @@ import { DeapiVoice } from '@deapi/mastra-voice';
 
 const voice = new DeapiVoice({
   speechModel: { name: 'Kokoro' },            // optional, default 'Kokoro'
-  listeningModel: { name: 'WhisperLargeV3' }, // optional, default 'WhisperLargeV3'
+  listeningModel: { name: 'WhisperLargeV3Ct2' }, // optional, default 'WhisperLargeV3Ct2'
   speaker: 'af_nova',                         // optional, default 'af_alloy'
 });
 
@@ -65,7 +65,7 @@ const audio = await agent.voice.speak('Once upon a time...', { lang: 'en-gb' });
 | --- | --- | --- |
 | `speechModel.name` | `Kokoro` | `Kokoro`, `Chatterbox`, `Qwen3_TTS_12Hz_1_7B_CustomVoice`, `Qwen3_TTS_12Hz_1_7B_VoiceDesign` or any TTS model slug from `GET /models` |
 | `speechModel.apiKey` | `DEAPI_API_KEY` | API key for speech |
-| `listeningModel.name` | `WhisperLargeV3` | Transcription model |
+| `listeningModel.name` | `WhisperLargeV3Ct2` | Transcription model |
 | `listeningModel.apiKey` | `DEAPI_API_KEY` | API key for transcription |
 | `speaker` | `af_alloy` | Default voice ID |
 | `pollIntervalMs` | `1000` | How often to check job status |
