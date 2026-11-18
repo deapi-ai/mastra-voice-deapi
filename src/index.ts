@@ -5,7 +5,14 @@ import { MastraVoice } from '@mastra/core/voice';
 const DEFAULT_BASE_URL = 'https://api.deapi.ai/api/v2';
 const DEFAULT_SPEECH_MODEL = 'Kokoro';
 const DEFAULT_LISTENING_MODEL = 'WhisperLargeV3Ct2';
-const DEFAULT_SPEAKER = 'af_alloy';
+/** Built-in defaults for the default model, so Kokoro works without a catalog lookup. */
+const KOKORO_DEFAULTS = { voice: 'af_alloy', lang: 'en-us' } as const;
+const DEFAULT_FORMAT = 'mp3';
+const DEFAULT_SAMPLE_RATE = 24000;
+const DEFAULT_SPEED = 1;
+/** The API returns at most 100 models per page. */
+const MODELS_PER_PAGE = 100;
+const MODEL_CACHE_TTL_MS = 10 * 60 * 1000;
 
 /** Text-to-speech models available on deAPI. Any other model slug from `GET /models` also works. */
 export type DeapiSpeechModel =
@@ -18,6 +25,9 @@ export type DeapiSpeechModel =
 /** Speech-to-text models available on deAPI. */
 export type DeapiListeningModel = 'WhisperLargeV3Ct2' | (string & {});
 
+/** TTS mode. `custom_voice` uses a preset voice, `voice_design` creates a voice from a text description. */
+export type DeapiSpeechMode = 'custom_voice' | 'voice_design' | (string & {});
+
 export interface DeapiModelConfig<TModel extends string = string> {
   name?: TModel;
   apiKey?: string;
@@ -26,8 +36,16 @@ export interface DeapiModelConfig<TModel extends string = string> {
 export interface DeapiVoiceConfig {
   speechModel?: DeapiModelConfig<DeapiSpeechModel>;
   listeningModel?: DeapiModelConfig<DeapiListeningModel>;
-  /** Default voice ID, for example `af_alloy` or `bm_george` (Kokoro). */
+  /**
+   * Default voice ID for the speech model, for example `af_alloy` or `bm_george` (Kokoro) or `Vivian` (Qwen3 CustomVoice).
+   * Defaults to the model's default voice from the deAPI model catalog (`af_alloy` for Kokoro).
+   */
   speaker?: string;
+  /**
+   * Voice description or style instruction, sent as `instruct`. Required by Qwen3 VoiceDesign
+   * (for example "A warm female voice with a British accent"), optional style control for Qwen3 CustomVoice.
+   */
+  instructions?: string;
   /** Override the API base URL. Defaults to `https://api.deapi.ai/api/v2`. */
   baseUrl?: string;
   /** How often to poll a job, in milliseconds. Defaults to 1000. */
@@ -42,13 +60,22 @@ export interface DeapiSpeakOptions {
   speaker?: string;
   /** Override the speech model for this call. */
   model?: DeapiSpeechModel;
-  /** Language code, for example `en-us`, `en-gb`, `es`. Defaults to the model's default language. */
+  /**
+   * Language code. The codes depend on the model, for example `en-us` or `en-gb` (Kokoro), `en` (Chatterbox),
+   * `English` (Qwen3). Defaults to the model's default language from the model catalog.
+   */
   lang?: string;
-  /** Speaking speed, usually between 0.5 and 2. */
+  /** TTS mode. Detected from the model catalog when omitted (`voice_design` for Qwen3 VoiceDesign). */
+  mode?: DeapiSpeechMode;
+  /** Voice description (VoiceDesign) or style instruction (CustomVoice). Overrides the constructor `instructions`. */
+  instructions?: string;
+  /** Alias of `instructions`, using the API field name. */
+  instruct?: string;
+  /** Speaking speed, usually between 0.5 and 2. Defaults to the model's default (1). */
   speed?: number;
-  /** Output format. Defaults to `mp3`. */
+  /** Output format. Defaults to the model's default (`mp3`). */
   format?: string;
-  /** Output sample rate. Defaults to 24000. */
+  /** Output sample rate. Defaults to the model's default (24000). */
   sampleRate?: number;
   /** Extra request fields passed straight to `POST /audio/speech`. */
   [key: string]: unknown;
@@ -83,6 +110,15 @@ interface DeapiJob {
 interface DeapiModel {
   slug: string;
   languages?: Array<{ name: string; slug: string; voices?: Array<{ name: string; slug: string; gender?: string }> }>;
+  info?: {
+    defaults?: Record<string, unknown> | null;
+    features?: Record<string, unknown> | null;
+  } | null;
+}
+
+interface DeapiModelPage {
+  data?: DeapiModel[];
+  meta?: { last_page?: number };
 }
 
 const FAILED_STATUSES = new Set(['error', 'failed', 'cancelled', 'canceled']);
@@ -101,11 +137,19 @@ function extractTranscript(raw: string): string {
   return trimmed;
 }
 
+function stringOrUndefined(value: unknown): string | undefined {
+  return typeof value === 'string' && value.length > 0 ? value : undefined;
+}
+
+function numberOrUndefined(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
+}
+
 /**
  * deAPI voice provider for Mastra: text-to-speech (Kokoro, Chatterbox, Qwen3 TTS)
  * and speech-to-text (Whisper Large V3, CTranslate2) on open-source models.
  *
- * Get an API key at https://app.deapi.ai/register and set `DEAPI_API_KEY`.
+ * Create an API key at https://app.deapi.ai/settings/api-keys and set `DEAPI_API_KEY`.
  */
 export class DeapiVoice extends MastraVoice {
   private readonly speechApiKey: string;
@@ -114,28 +158,34 @@ export class DeapiVoice extends MastraVoice {
   private readonly pollIntervalMs: number;
   private readonly timeoutMs: number;
   private readonly fetchImpl: typeof fetch;
+  /** Speaker passed to the constructor. It applies only to the configured speech model. */
+  private readonly configuredSpeaker?: string;
+  private readonly instructions?: string;
+  private modelCache?: { at: number; models: Promise<DeapiModel[]> };
 
   constructor({
     speechModel,
     listeningModel,
     speaker,
+    instructions,
     baseUrl,
     pollIntervalMs,
     timeoutMs,
     fetch: fetchImpl,
   }: DeapiVoiceConfig = {}) {
     const defaultApiKey = process.env.DEAPI_API_KEY;
+    const speechModelName = speechModel?.name ?? DEFAULT_SPEECH_MODEL;
 
     super({
       speechModel: {
-        name: speechModel?.name ?? DEFAULT_SPEECH_MODEL,
+        name: speechModelName,
         apiKey: speechModel?.apiKey ?? defaultApiKey,
       },
       listeningModel: {
         name: listeningModel?.name ?? DEFAULT_LISTENING_MODEL,
         apiKey: listeningModel?.apiKey ?? defaultApiKey,
       },
-      speaker: speaker ?? DEFAULT_SPEAKER,
+      speaker: speaker ?? (speechModelName === DEFAULT_SPEECH_MODEL ? KOKORO_DEFAULTS.voice : undefined),
     });
 
     const speechApiKey = speechModel?.apiKey ?? defaultApiKey;
@@ -149,6 +199,8 @@ export class DeapiVoice extends MastraVoice {
 
     this.speechApiKey = speechApiKey;
     this.listeningApiKey = listeningApiKey;
+    this.configuredSpeaker = speaker;
+    this.instructions = instructions;
     this.baseUrl = (baseUrl ?? DEFAULT_BASE_URL).replace(/\/+$/, '');
     this.pollIntervalMs = pollIntervalMs ?? 1000;
     this.timeoutMs = timeoutMs ?? 300_000;
@@ -158,8 +210,7 @@ export class DeapiVoice extends MastraVoice {
   /** Lists the voices of the current speech model, read from deAPI's model catalog. */
   async getSpeakers(): Promise<DeapiSpeaker[]> {
     const modelSlug = this.speechModel?.name ?? DEFAULT_SPEECH_MODEL;
-    const body = await this.request<{ data: DeapiModel[] }>(this.speechApiKey, '/models?per_page=100');
-    const model = body.data.find(m => m.slug === modelSlug);
+    const model = await this.findModel(modelSlug);
     if (!model) {
       throw new Error(`deAPI model "${modelSlug}" was not found in the model catalog.`);
     }
@@ -180,18 +231,66 @@ export class DeapiVoice extends MastraVoice {
       throw new Error('Input text is empty');
     }
 
-    const { speaker, model, lang, speed, format, sampleRate, ...rest } = options ?? {};
+    const { speaker, model, lang, mode, instructions, instruct, speed, format, sampleRate, ...rest } = options ?? {};
+    const instanceModel = this.speechModel?.name ?? DEFAULT_SPEECH_MODEL;
+    const modelSlug = model ?? instanceModel;
+
+    // Explicit values win: call options first, then the constructor speaker (only for the model it was set for).
+    let voice = speaker ?? (modelSlug === instanceModel ? this.configuredSpeaker : undefined);
+    let language = lang;
+    let resolvedMode = mode;
+    let resolvedFormat = format;
+    let resolvedSampleRate = sampleRate;
+    let resolvedSpeed = speed;
+
+    if (modelSlug === DEFAULT_SPEECH_MODEL) {
+      voice ??= KOKORO_DEFAULTS.voice;
+      language ??= KOKORO_DEFAULTS.lang;
+    } else if (language === undefined || resolvedMode === undefined || (voice === undefined && resolvedMode === 'custom_voice')) {
+      // Every other model has its own languages and voices: fill the gaps from the model catalog.
+      const catalogModel = await this.findModel(modelSlug);
+      if (!catalogModel) {
+        throw new Error(
+          `deAPI model "${modelSlug}" was not found in the model catalog. Check the model name or pass lang and speaker explicitly.`,
+        );
+      }
+      const defaults = catalogModel.info?.defaults ?? {};
+      const features = catalogModel.info?.features ?? {};
+      if (resolvedMode === undefined && features.supports_custom_voice === false && features.supports_voice_design === true) {
+        resolvedMode = 'voice_design';
+      }
+      language ??= stringOrUndefined(defaults.lang);
+      if (resolvedMode !== 'voice_design') voice ??= stringOrUndefined(defaults.voice);
+      resolvedFormat ??= stringOrUndefined(defaults.format);
+      resolvedSampleRate ??= numberOrUndefined(defaults.sample_rate);
+      resolvedSpeed ??= numberOrUndefined(defaults.speed);
+      if (language === undefined) {
+        throw new Error(`deAPI model "${modelSlug}" has no default language in the model catalog. Pass lang explicitly.`);
+      }
+      if (voice === undefined && (resolvedMode ?? 'custom_voice') === 'custom_voice') {
+        throw new Error(`deAPI model "${modelSlug}" has no default voice in the model catalog. Pass speaker explicitly.`);
+      }
+    }
+
+    const instruction = instructions ?? instruct ?? this.instructions;
+    if (resolvedMode === 'voice_design' && !instruction) {
+      throw new Error(
+        `deAPI model "${modelSlug}" creates a voice from a description. Pass instructions, for example "A warm female voice with a British accent".`,
+      );
+    }
+
     const payload: Record<string, unknown> = {
       text,
-      model: model ?? this.speechModel?.name ?? DEFAULT_SPEECH_MODEL,
-      voice: speaker ?? this.speaker ?? DEFAULT_SPEAKER,
-      format: format ?? 'mp3',
-      sample_rate: sampleRate ?? 24000,
-      speed: speed ?? 1,
-      ...rest,
+      model: modelSlug,
+      lang: language,
+      format: resolvedFormat ?? DEFAULT_FORMAT,
+      sample_rate: resolvedSampleRate ?? DEFAULT_SAMPLE_RATE,
+      speed: resolvedSpeed ?? DEFAULT_SPEED,
     };
-    if (lang !== undefined) payload.lang = lang;
-    else if (payload.model === DEFAULT_SPEECH_MODEL) payload.lang = 'en-us';
+    if (voice !== undefined) payload.voice = voice;
+    if (resolvedMode !== undefined) payload.mode = resolvedMode;
+    if (instruction) payload.instruct = instruction;
+    Object.assign(payload, rest);
 
     const job = await this.runJob(this.speechApiKey, '/audio/speech', {
       method: 'POST',
@@ -232,6 +331,29 @@ export class DeapiVoice extends MastraVoice {
       throw new Error('deAPI transcription job finished without a transcript.');
     }
     return extractTranscript((await this.download(job.result_url)).toString('utf-8'));
+  }
+
+  /** Finds a model in the catalog. The catalog is cached for 10 minutes per instance. */
+  private async findModel(slug: string): Promise<DeapiModel | undefined> {
+    if (!this.modelCache || Date.now() - this.modelCache.at > MODEL_CACHE_TTL_MS) {
+      const models = this.fetchModels();
+      this.modelCache = { at: Date.now(), models };
+      // Do not keep a failed lookup in the cache.
+      models.catch(() => {
+        if (this.modelCache?.models === models) this.modelCache = undefined;
+      });
+    }
+    return (await this.modelCache.models).find(m => m.slug === slug);
+  }
+
+  private async fetchModels(): Promise<DeapiModel[]> {
+    const models: DeapiModel[] = [];
+    for (let page = 1; ; page++) {
+      const body = await this.request<DeapiModelPage>(this.speechApiKey, `/models?per_page=${MODELS_PER_PAGE}&page=${page}`);
+      const data = body.data ?? [];
+      models.push(...data);
+      if (data.length === 0 || page >= (body.meta?.last_page ?? 1)) return models;
+    }
   }
 
   private async runJob(apiKey: string, path: string, init: RequestInit): Promise<DeapiJob> {
