@@ -46,15 +46,13 @@ jobs:
         run: npm pack --dry-run
 
   mastra-core-min:
-    # The peer range is ^1.0.0: check the oldest @mastra/core releases too.
+    # The peer range is ^1.1.0: check the oldest supported @mastra/core release too.
     name: '@mastra/core ${{ matrix.core }}'
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
         include:
-          # 1.0.x types Agent `voice` as CompositeVoice, so only the library itself is typechecked there.
-          - { core: '1.0.0', typecheck: 'npx tsc -p tsconfig.build.json --noEmit' }
           - { core: '1.1.0', typecheck: 'npm run typecheck' }
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1

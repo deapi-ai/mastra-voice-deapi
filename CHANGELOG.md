@@ -18,6 +18,6 @@ First release.
 - `getSpeakers()`: voices and languages of the configured speech model, from the deAPI model catalog.
 - Job polling with configurable interval and timeout, readable errors with the API message, error code and reason.
 - Works as an agent `voice` and inside `CompositeVoice` (input, output or both).
-- Requires Node.js 22.13 or newer and `@mastra/core` 1.x.
+- Requires Node.js 22.13 or newer and `@mastra/core` 1.1 or newer (1.x).
 
 [0.1.0]: https://github.com/deapi-ai/mastra-voice-deapi/releases/tag/v0.1.0

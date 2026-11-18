@@ -5,9 +5,8 @@ import { describe, expect, it, vi } from 'vitest';
 import { DeapiVoice } from '../src/index.js';
 
 // The agent's `voice` option type, derived from the installed @mastra/core: `IMastraVoice` since 1.82,
-// `MastraVoice` from 1.1 to 1.81. `npm run typecheck` checks that DeapiVoice is assignable to it.
-// @mastra/core 1.0.x typed it as `CompositeVoice`, so there the voice has to be wrapped in a CompositeVoice
-// (CI runs this file on 1.0.0 without the typecheck, see .github/workflows/ci.yml).
+// `MastraVoice` from 1.1 to 1.81. `npm run typecheck` checks that DeapiVoice is assignable to it
+// (CI also runs it on the oldest supported release, 1.1.0, see .github/workflows/ci.yml).
 type AgentVoice = NonNullable<ConstructorParameters<typeof Agent>[0]['voice']>;
 
 function mockedDeapi() {

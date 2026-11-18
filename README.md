@@ -11,7 +11,7 @@
 npm install @deapi/mastra-voice @mastra/core
 ```
 
-Requires Node.js 22.13 or newer and `@mastra/core` 1.x.
+Requires Node.js 22.13 or newer and `@mastra/core` 1.1 or newer (1.x).
 
 Create an API key at [app.deapi.ai/settings/api-keys](https://app.deapi.ai/settings/api-keys) and set it:
 
@@ -112,8 +112,6 @@ const voice = new CompositeVoice({
 
 const agent = new Agent({ id: 'assistant', name: 'Assistant', instructions: 'You are helpful.', model: 'openai/gpt-4o-mini', voice });
 ```
-
-With `@mastra/core` 1.0.x, the agent's `voice` option is typed as `CompositeVoice`, so wrap `DeapiVoice` as above. From 1.1 you can pass `DeapiVoice` directly.
 
 ## Options
 
