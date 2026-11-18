@@ -1,6 +1,6 @@
 {
   "name": "@deapi/mastra-voice",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "deAPI voice provider for Mastra: text-to-speech (Kokoro, Chatterbox, Qwen3 TTS) and speech-to-text (Whisper Large V3)",
   "type": "module",
   "main": "dist/index.js",

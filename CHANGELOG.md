@@ -4,6 +4,13 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [0.1.1] - 2026-11-18
+
+### Changed
+
+- First release published from GitHub Actions through npm trusted publishing
+  with provenance (staged, approved with 2FA). No code changes.
+
 ## [0.1.0] - 2026-11-18
 
 First release.
@@ -20,4 +27,5 @@ First release.
 - Works as an agent `voice` and inside `CompositeVoice` (input, output or both).
 - Requires Node.js 22.13 or newer and `@mastra/core` 1.1 or newer (1.x).
 
+[0.1.1]: https://github.com/deapi-ai/mastra-voice-deapi/releases/tag/v0.1.1
 [0.1.0]: https://github.com/deapi-ai/mastra-voice-deapi/releases/tag/v0.1.0
